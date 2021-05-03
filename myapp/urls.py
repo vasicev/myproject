@@ -2,5 +2,5 @@ from django.urls import path
 from .views import home
 
 urlpatterns = [
-    path('hello-world/', home)
+    path('task1/', home)
 ]
