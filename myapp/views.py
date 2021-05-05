@@ -1,13 +1,72 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from rest_framework import viewsets
 from rest_framework.response import Response as RestResponse
 from rest_framework.decorators import action
 from rest_framework.status import HTTP_404_NOT_FOUND
 from .models import Tag, Task, TagSerializer, TaskSerializer
+from rest_framework.permissions import IsAuthenticated
+from oauth2_provider.models import Application, Grant, RefreshToken, AccessToken
+import requests
+import json
+
+def first_task(request):
+    return HttpResponse('Hello World!')
+
 
 def home(request):
-    return HttpResponse('Hello Wolrd!')
+    return render(request, 'home.html')
+
+def authorized_api(request):
+    myapp = Application.objects.get(name='myapp')
+    client_id = myapp.client_id
+    client_secret = myapp.client_secret
+    url = 'http://127.0.0.1:8000/o/token/'
+    access_token = AccessToken.objects.last()
+    if access_token:
+        url = 'http://127.0.0.1:8000/api/' + str(request.GET.get('m', ''))
+        headers = {
+            'Authorization': f"Bearer {access_token}"
+        }
+        req = requests.get(url, headers=headers)
+        res = json.loads(req.text)
+        return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
+    else:
+        refresh_token = RefreshToken.objects.last()
+        if refresh_token:
+            data = {
+                'grant_type': 'refresh_token',
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'refresh_token': refresh_token
+            }
+            req = requests.post(url, data=data)
+            res = json.loads(req.text)
+            return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
+        else:
+            code = Grant.objects.last()
+            if code:
+                headers = {
+                    'Cache-Control': 'no-cache',
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+                data = {
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'code': code,
+                    'redirect_uri': 'http://127.0.0.1:8000/',
+                    'grant_type': 'authorization_code'
+                }
+                req = requests.post(url, headers=headers, data=data)
+                res = json.loads(req.text)
+                return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
+            else:
+                return redirect(
+                    'http://127.0.0.1:8000/o/authorize/' +
+                    '?response_type=code' +
+                    f'&client_id={client_id}'
+                    '&redirect_uri=http://127.0.0.1:8000/'
+                )
 
 class TagView(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
