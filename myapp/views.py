@@ -29,8 +29,12 @@ def authorized_api(request):
             'Authorization': f"Bearer {access_token}"
         }
         req = requests.get(url, headers=headers)
+        valid = req.status_code != 401
+    if access_token and not valid:
+        access_token.delete()
+    if access_token and valid:
         res = json.loads(req.text)
-        return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
+        return HttpResponse(f"<p style=\"font-family:monospace\">{res, req.status_code}<p>")
     else:
         refresh_token = RefreshToken.objects.last()
         if refresh_token:
@@ -41,8 +45,12 @@ def authorized_api(request):
                 'refresh_token': refresh_token
             }
             req = requests.post(url, data=data)
+            valid = req.status_code != 401
+        if refresh_token and not valid:
+            refresh_token.delete()
+        if refresh_token and valid:
             res = json.loads(req.text)
-            return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
+            return HttpResponse(f"<p style=\"font-family:monospace\">{res}, refresh<p>")
         else:
             code = Grant.objects.last()
             if code:
@@ -58,6 +66,10 @@ def authorized_api(request):
                     'grant_type': 'authorization_code'
                 }
                 req = requests.post(url, headers=headers, data=data)
+                valid = req.status_code != 401
+            if code and not valid:
+                code.delete()
+            if code and valid:
                 res = json.loads(req.text)
                 return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
             else:
