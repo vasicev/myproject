@@ -34,7 +34,7 @@ def authorized_api(request):
         access_token.delete()
     if access_token and valid:
         res = json.loads(req.text)
-        return HttpResponse(f"<p style=\"font-family:monospace\">{res, req.status_code}<p>")
+        return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
     else:
         refresh_token = RefreshToken.objects.last()
         if refresh_token:
@@ -50,7 +50,7 @@ def authorized_api(request):
             refresh_token.delete()
         if refresh_token and valid:
             res = json.loads(req.text)
-            return HttpResponse(f"<p style=\"font-family:monospace\">{res}, refresh<p>")
+            return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
         else:
             code = Grant.objects.last()
             if code:
