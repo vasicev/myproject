@@ -2,13 +2,17 @@ from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from rest_framework import viewsets
 from rest_framework.response import Response as RestResponse
-from rest_framework.decorators import action
+from rest_framework.decorators import action, renderer_classes, api_view, permission_classes, authentication_classes
 from rest_framework.status import HTTP_404_NOT_FOUND
 from .models import Tag, Task, TagSerializer, TaskSerializer
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from oauth2_provider.models import Application, Grant, RefreshToken, AccessToken
+from oauth2_provider.contrib.rest_framework import TokenHasReadWriteScope, TokenHasScope, OAuth2Authentication
 import requests
 import json
+from rest_framework.renderers import JSONRenderer, TemplateHTMLRenderer
+
+from django.contrib.auth.models import User, Group
 
 def first_task(request):
     return HttpResponse('Hello World!')
@@ -17,6 +21,24 @@ def first_task(request):
 def home(request):
     return render(request, 'home.html')
 
+def curl(type, url, headers=None, data=None):
+    if 'get'.__eq__(type):
+        req = requests.get(url, headers=headers, data=data)
+        print('\n\n' + str(req.json()) + '\n\n')
+        return req
+    elif 'post'.__eq__(type):
+        req = requests.post(url, headers=headers, data=json.dumps(data))
+        print('\n\n' + str(req.json()) + '\n\n')
+        return req
+    elif 'put'.__eq__(type):
+        req = requests.put(url, headers=headers, data=json.dumps(data))
+        print('\n\n' + str(req.json()) + '\n\n')
+        return req
+
+@api_view(('GET',))
+# @renderer_classes((JSONRenderer, TemplateHTMLRenderer))
+@permission_classes((AllowAny,))
+# @authentication_classes(OAuth2Authentication)
 def authorized_api(request):
     myapp = Application.objects.get(name='myapp')
     client_id = myapp.client_id
@@ -24,17 +46,46 @@ def authorized_api(request):
     url = 'http://127.0.0.1:8000/o/token/'
     access_token = AccessToken.objects.last()
     if access_token:
-        url = 'http://127.0.0.1:8000/api/' + str(request.GET.get('m', ''))
+        model = str(request.GET.get('m', ''))
+        url = 'http://127.0.0.1:8000/api/'
+        if model:
+            url += model
         headers = {
             'Authorization': f"Bearer {access_token}"
         }
-        req = requests.get(url, headers=headers)
+        option = str(request.GET.get('op', ''))
+        if 'tag'.__eq__(model):
+            title = str(request.GET.get('title', ''))
+            if 'post'.__eq__(option) and title:
+                url += '/'
+                headers['Content-Type'] = 'application/json'
+                data = {
+                    'title': title
+                }
+                req = curl('post', url, headers, data)
+            elif 'put'.__eq__(option) and title:
+                pk = str(request.GET.get('pk', ''))
+                url += '/' + pk + '/'
+                print('url: --> ' + url + ' option=' + option)
+                headers['Content-Type'] = 'application/json'
+                data = {
+                    'title': title
+                }
+                req = curl('put', url, headers, data)
+            else:
+                req = curl('get', url, headers)
+        else:
+            # print('url: --> ' + url + ' option=' + option)
+            req = curl('get', url, headers)
         valid = req.status_code != 401
     if access_token and not valid:
         access_token.delete()
     if access_token and valid:
         res = json.loads(req.text)
-        return HttpResponse(f"<p style=\"font-family:monospace\">{res}<p>")
+        if not model:
+            res['tag'] = 'http://127.0.0.1:8000/authorized_api/?m=tag'
+            res['task'] = 'http://127.0.0.1:8000/authorized_api/?m=task'
+        return RestResponse(res)
     else:
         refresh_token = RefreshToken.objects.last()
         if refresh_token:
@@ -81,11 +132,17 @@ def authorized_api(request):
                 )
 
 class TagView(viewsets.ModelViewSet):
+    # permission_classes = [IsAuthenticated, TokenHasReadWriteScope]
+    # authentication_classes = [OAuth2Authentication]
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
+
+    def put(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
         
 
 class TaskView(viewsets.ModelViewSet):
+    #permission_classes = [IsAuthenticated, TokenHasReadWriteScope]
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
@@ -94,6 +151,7 @@ class TaskView(viewsets.ModelViewSet):
         params = dict(query_params)
         if params:
             filtered_tags = Tag.objects.filter(title__in=params['title'])
+            print("PRINT = " + str(filtered_tags))
             tagIDs = []
             for tag in filtered_tags:
                 tagIDs.append(tag.pk)
